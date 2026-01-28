@@ -1,0 +1,17 @@
+# R
+.Rhistory
+.Rdata
+.RData
+.Ruserdata
+*.Rproj.user/
+
+# Quarto
+/.quarto/
+*_files/
+*.html
+
+# macOS
+.DS_Store
+
+# Output (keep docx for submission)
+# *.docx

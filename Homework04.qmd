@@ -1,0 +1,347 @@
+---
+title: "Homework Case Study: Phillips Curve Analysis for the U.S."
+author: "Dr. Logan Kelly"
+format:
+  docx:
+    toc: false
+    number-sections: false
+---
+
+::: {.callout-note}
+## Assignment Overview: Steps to Complete
+
+1. Load necessary R packages.
+2. Download U.S. Unemployment and CPI data from FRED.
+3. Create a monthly Inflation series from the CPI.
+4. Perform Exploratory Data Analysis (EDA):
+   - Generate summary statistics.
+   - Create time series plots.
+5. Test for stationarity of unemployment and inflation using the Augmented Dickey-Fuller (ADF) test.
+6. Difference series if necessary to achieve stationarity.
+7. Estimate a basic Phillips Curve model: Inflation as a function of Unemployment.
+8. Test for serial correlation in the residuals using the Breusch-Godfrey test (up to lag 12).
+9. Improve the model by adding one lag of inflation.
+10. Interpret the coefficients, especially lagged inflation, and discuss policy implications.
+11. Bonus: Test for structural breaks using the Bai-Perron method.
+12. Optional: Re-estimate the Phillips Curve before and after identified breakpoints.
+13. Submit your R code, outputs, plots, and written answers.
+:::
+
+# Case Study: Exploring the Phillips Curve
+
+This case study examines the relationship between U.S. unemployment and inflation, commonly known as the Phillips Curve. You will follow a structured analysis process to clean the data, explore the data visually, test statistical properties, estimate regression models, and interpret economic meaning based on the results.
+
+---
+
+# Instructions
+
+This section provides detailed steps to follow. Complete each part carefully, and answer the interpretation questions as you go.
+
+
+
+# 1. Load Required Packages
+
+We will use several R packages for data handling, statistical testing, and visualization.
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+
+pacman::p_load(
+  tidyverse,
+  quantmod,
+  urca,
+  tseries,
+  lmtest,
+  zoo,
+  lubridate,
+  strucchange
+)
+```
+
+**Explanation:**  
+`pacman` simplifies loading multiple libraries at once.  
+We will use packages for downloading data, stationarity testing, regression modeling, diagnostics, and structural break analysis.
+
+
+
+# 2. Load the Data
+
+We will analyze two monthly time series:
+
+- **UNRATE**: Civilian Unemployment Rate
+- **CPIAUCSL**: Consumer Price Index for All Urban Consumers
+
+The data has been pre-downloaded from the Federal Reserve Economic Data (FRED) database and is available in the `data/` folder.
+
+```{r}
+# Load data from local files
+UNRATE <- read.csv("data/UNRATE.csv")
+CPIAUCSL <- read.csv("data/CPIAUCSL.csv")
+
+# Convert date columns
+UNRATE$date <- as.Date(UNRATE$date)
+CPIAUCSL$date <- as.Date(CPIAUCSL$date)
+
+# View the data
+head(UNRATE)
+head(CPIAUCSL)
+```
+
+**Explanation:**
+These series are sourced from the Federal Reserve Economic Data (FRED) database. They represent core U.S. macroeconomic indicators.
+
+
+
+# 3. Create the Inflation Rate Series
+
+We will compute monthly inflation as the percent change in CPI.
+
+```{r}
+# Compute monthly inflation rate
+CPIAUCSL <- CPIAUCSL %>%
+  arrange(date) %>%
+  mutate(Inflation = 100 * (log(CPIAUCSL) - log(lag(CPIAUCSL))))
+
+# Create inflation data frame
+inflation_data <- CPIAUCSL %>%
+  select(Date = date, Inflation) %>%
+  drop_na()
+
+# Create unemployment data frame
+unemployment_data <- UNRATE %>%
+  select(Date = date, Unemployment = UNRATE)
+
+# Merge datasets by Date
+phillips_data <- left_join(inflation_data, unemployment_data, by = "Date")
+
+# Remove missing values
+phillips_data <- drop_na(phillips_data)
+
+# View merged data
+head(phillips_data)
+```
+
+**Explanation:**
+This process carefully builds two clean data frames and merges them by date, ensuring that inflation and unemployment are properly aligned.
+
+
+
+# Exploratory Data Analysis (EDA)
+
+EDA helps us understand trends, volatility, and potential issues before modeling.
+
+## 4. Summarize and Plot the Data
+
+```{r}
+# Summary statistics
+summary(phillips_data$Unemployment)
+summary(phillips_data$Inflation)
+
+# Time series plots
+phillips_data %>%
+  ggplot(aes(x = Date, y = Unemployment)) +
+  geom_line() +
+  labs(title = "U.S. Unemployment Rate", x = "Date", y = "Percent")
+
+phillips_data %>%
+  ggplot(aes(x = Date, y = Inflation)) +
+  geom_line() +
+  labs(title = "U.S. Inflation Rate (Monthly)", x = "Date", y = "Percent Change")
+```
+
+**Explanation:**  
+Summary statistics and visual plots allow us to spot trends, volatility, and any periods of unusual behavior in the time series.
+
+
+
+# Stationarity Testing
+
+Stationarity is critical for valid statistical inference.
+
+## 5. Test for Stationarity (Augmented Dickey-Fuller Tests)
+
+```{r}
+# ADF Tests
+adf.test(phillips_data$Unemployment)
+adf.test(phillips_data$Inflation)
+```
+
+**Explanation:**  
+The ADF test helps determine if the series are stationary or if they contain unit roots, indicating a need for differencing.
+
+
+
+## 6. Transform the Data if Necessary
+
+```{r}
+# First difference unemployment if needed
+phillips_data <- phillips_data %>%
+  mutate(
+    d_Unemployment = c(NA, diff(Unemployment))
+  )
+
+# Rerun ADF on differenced series
+adf.test(na.omit(phillips_data$d_Unemployment))
+```
+
+**Explanation:**  
+Differencing is applied if a series is non-stationary. Stationary series have constant mean and variance over time.
+
+
+
+# Model Estimation
+
+## 7. Estimate a Basic Phillips Curve
+
+```{r}
+model1 <- lm(Inflation ~ d_Unemployment, data = phillips_data)
+summary(model1)
+```
+
+**Explanation:**  
+We estimate a basic Phillips Curve model where inflation is regressed on unemployment.
+
+
+# Diagnostic Testing
+
+Checking for model validity is crucial before moving to interpretation or policy recommendations.
+
+## 8. Test for Serial Correlation (Breusch-Godfrey Test)
+
+```{r}
+bgtest(model1, order = 12)
+```
+
+**Explanation:**  
+Serial correlation in the residuals can undermine regression validity by inflating the goodness-of-fit and leading to biased standard errors. The Breusch-Godfrey test checks for autocorrelation up to 12 lags, which covers one year of monthly data. A significant p-value (typically p < 0.05) indicates that serial correlation is present and that the model may need modification.
+
+**Interpretation Task:**  
+- Examine the p-value from the Breusch-Godfrey test.
+- If the p-value is **small** (below 0.05), conclude that serial correlation exists, meaning residuals are not independent and the model needs adjustment (e.g., by adding a lagged variable).
+- If the p-value is **large** (above 0.05), conclude that there is no evidence of serial correlation, and proceed with the model.
+- In either case, briefly explain your conclusion about the presence or absence of residual autocorrelation.
+
+
+# Model Improvement
+
+After diagnosing issues such as serial correlation, it is important to modify the model to improve its validity.
+
+## 9. Add Lagged Inflation to the Model
+
+```{r}
+# Add lagged inflation
+phillips_data <- phillips_data %>%
+  mutate(
+    Inflation_Lag = lag(Inflation)
+  )
+
+# Remove missing values
+phillips_data2 <- na.omit(phillips_data)
+
+# New model
+model2 <- lm(Inflation ~ d_Unemployment + Inflation_Lag, data = phillips_data2)
+summary(model2)
+```
+
+**Explanation:**  
+Including a lagged value of inflation (the dependent variable) captures the persistence of inflation over time, which is common in macroeconomic data.When a dependent variable is persistent, shocks or movements today can affect future outcomes. If this dynamic is ignored, residuals may show serial correlation because the model is missing an important source of explanatory power. Adding a lagged dependent variable often helps correct for serial correlation because it allows the model to explicitly account for the dynamic structure of the data.
+
+# Interpretation
+
+## 10. Interpretation Questions
+
+Answer the following questions:
+- Was serial correlation present initially?
+- How did adding lagged inflation affect the model?
+- Interpret the coefficient on lagged inflation.
+- Discuss implications for policymakers.
+
+
+
+# Bonus: Structural Breaks with Bai-Perron Method
+
+Economic relationships are often subject to change over time due to major events such as financial crises, technological innovations, or shifts in public policy. These changes can cause structural breaks in the relationship between key variables, such as unemployment and inflation. The Bai-Perron method provides a formal statistical test for detecting multiple unknown structural breaks within a regression model. Rather than requiring the researcher to specify when changes might have occurred, the method searches for breakpoints systematically. It then divides the data into distinct regimes, allowing the underlying relationship, such as the Phillips Curve, to vary across different periods.
+
+
+
+## 11. Apply Bai-Perron Test
+
+```{r}
+# Run Bai-Perron
+breakpoints_model2 <- breakpoints(Inflation ~ d_Unemployment + Inflation_Lag, data = phillips_data2)
+```
+
+**Explanation:**  
+We identify when major shifts in the inflation-unemployment relationship occurred.
+
+
+
+## 12. Determine the Number of Breaks
+
+This uses the BIC to determin the number of breakpoints.
+
+```{r}
+# Extract break dates
+break_dates <- phillips_data2$Date[breakpoints_model2$breakpoints]
+break_dates
+```
+
+**Explanation:**  
+The best number of breaks minimizes the BIC criterion. The dates are when the relationship mostlikly changes.
+
+
+
+## Interpretation Questions
+
+- How many breaks were found?
+- What does this suggest about the stability of the Phillips Curve?
+
+
+
+# Optional Extension: Re-Estimating the Phillips Curve Before and After Breakpoints
+
+## 13. Split and Re-Estimate
+
+```{r}
+# Assume a break in 2010 for illustration
+
+phillips_pre <- phillips_data2 %>% 
+  filter(Date >= as.Date("1967-05-01") & Date < as.Date("1982-06-01"))
+phillips_post <- phillips_data2 %>% filter(Date > as.Date("1982-06-01"))
+
+# Pre-break model
+model_pre <- lm(Inflation ~ Unemployment + Inflation_Lag, data = phillips_pre)
+summary(model_pre)
+
+# Post-break model
+model_post <- lm(Inflation ~ Unemployment + Inflation_Lag, data = phillips_post)
+summary(model_post)
+```
+
+
+
+## Interpretation Questions
+
+- How did the coefficients differ before and after the break?
+- Did inflation persistence change?
+- How should policymakers adjust based on these findings?
+
+
+
+# Final Deliverables
+
+Submit:
+
+- Fully annotated R code
+- Output summaries
+- ADF, Breusch-Godfrey, and Bai-Perron test results
+- Plots
+- Written interpretation answers
+
+
+
+# Helpful Reminders
+
+- Always check stationarity before modeling.
+- Always diagnose residuals for serial correlation.
+- Always question whether relationships are stable over time.

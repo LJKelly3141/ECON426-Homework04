@@ -1,0 +1,14 @@
+project:
+  type: default
+  output-dir: .
+
+format:
+  docx:
+    toc: false
+    number-sections: false
+    highlight-style: github
+
+execute:
+  echo: true
+  warning: false
+  message: false
